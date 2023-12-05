@@ -1,0 +1,136 @@
+---
+title: "Shootings in New York"
+author: "Leonid Babich"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+Shootings as the rest of the crime is a hot topic and important problem for our society. Let's take a look at the available data collected by New York Police Department and try to find some insights.
+
+## Libraries
+
+Make sure you have all the packages below installed in your environment.
+If you don't, you can use `install.packages()` to install the missing packages
+```{r libs}
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+library(tidyverse)
+library(lubridate)
+```
+
+## Importing the Shooting DataSet
+
+```{r data}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd_ds <- read.csv(url)
+```
+
+## Tyding and Transforming the Data
+
+Let's tidy the data. We will convert text to date and time respectfully and will convert vectors to factors.
+
+```{r tidying}
+nypd_ds <- nypd_ds |> 
+  mutate(OCCUR_DATE=mdy(OCCUR_DATE), OCCUR_TIME=hms(OCCUR_TIME), 
+         BORO=factor(BORO), LOC_OF_OCCUR_DESC=factor(LOC_OF_OCCUR_DESC),
+         LOC_CLASSFCTN_DESC=factor(LOC_CLASSFCTN_DESC), 
+         LOCATION_DESC=factor(LOCATION_DESC),
+         STATISTICAL_MURDER_FLAG=factor(STATISTICAL_MURDER_FLAG),
+         PERP_AGE_GROUP=factor(PERP_AGE_GROUP), PERP_SEX=factor(PERP_SEX),
+         PERP_RACE=factor(PERP_RACE), VIC_AGE_GROUP=factor(VIC_AGE_GROUP),
+         VIC_SEX=factor(VIC_SEX), VIC_RACE=factor(VIC_RACE))
+```
+
+In order to analyse the data based on the date and time, let's create helper columns to store year, month and hour info.
+
+```{r datentime}
+nypd_ds <- nypd_ds |> 
+  mutate(YEAR = year(OCCUR_DATE), MONTH = month(OCCUR_DATE), 
+         HOUR=hour(OCCUR_TIME), YEARMONTH = lubridate::floor_date(OCCUR_DATE, "month"))
+```
+
+Let's check what we've got so far
+
+```{r summary}
+nypd_ds |> summary()
+```
+## Data Analysis and Visualisation
+
+Let's take a look on the dynamics of shooting development in NY over the time.
+Everything was great up to 2019. The shootings gradually decreased. And than, 2020 it just exploded! The number of shootings in 2020 is twice the number in 2019!
+
+```{r year}
+nypd_ds |> ggplot(aes(x=factor(YEAR))) + geom_bar(fill='pink') + 
+  geom_text(stat = 'count', aes(label = after_stat(count)), size = 3, vjust = -0.5) +
+  labs(title='Shootings in New York', subtitle = 'Year based plot', 
+       x='Year', y='Incidents') + theme_linedraw()
+```
+
+Analysis of shooting per calendar month seems to show correlation between air temperature and number of shootings. Hm.. Hot blood??
+
+```{r month}
+nypd_ds |> ggplot(aes(x=factor(MONTH))) + geom_bar(fill='lightblue') +
+  geom_text(stat = 'count', aes(label = after_stat(count)), size = 3, vjust = -0.5) + 
+  labs(title='Shootings in New York', subtitle = 'Month of Year plot', 
+       x='Month', y='Incidents') + 
+  theme_linedraw()
+```
+Time of the day to shootings graph looks obvious and doesn't show anything I wouldn't expect. Morning is safe and late night is violent. 
+
+```{r hour}
+nypd_ds |> ggplot(aes(x=factor(HOUR))) + geom_bar(fill='lightblue') +
+  geom_text(stat = 'count', aes(label = after_stat(count)), size = 3, vjust = -0.5) + 
+  labs(title='Shootings in New York', subtitle = 'Hour of Day plot', 
+       x='Hour', y='Incidents') + 
+  theme_linedraw()
+```
+
+```{r boro}
+nypd_ds |> ggplot() + 
+  geom_bar(aes(x=factor(YEAR), fill=BORO), position = 'dodge') + 
+  labs(title='Shootings in New York', subtitle = 'Year/Borough based plot', 
+       x='Year', y='Incidents', fill='Borough') + theme_linedraw()
+```
+
+## Data modeling
+
+Let's model how number of shoots affects number of killed.
+
+```{r lm}
+lm_model = lm(Shoot ~ Killed, data = nypd_ds |> summarise(
+  Killed = sum(STATISTICAL_MURDER_FLAG=='true'), 
+  Shoot = n(), .by=BORO))
+summary(lm_model)
+```
+
+Let's see it on the graph:
+
+```{r lmplot}
+nypd_ds |> summarise(Killed = sum(STATISTICAL_MURDER_FLAG=='true'), Shoot = n(), 
+                     .by=BORO) |> ggplot(aes(x=Shoot, y=Killed)) + geom_point() + 
+  geom_smooth(formula = y ~ x, method='lm', col='red') +
+  labs(title='Shootings in New York', subtitle = 'Linear regression model plot', 
+       x='Shootings', y='Murders')
+```
+
+## Bias Identification
+To the bias in the data. In my opinion the most significant bias is in perpetrator related data. A lot of information about the criminal is missing. Even the information exists may have errors.
+With regard to myself, I definitely is biased because of my age, race, education level etc. For instance I have a strong opinion that the level of crime is strongly correlated with the level of education. And the issue is that I will contentiously or not try to prove it.
+That is the reason I didn't work on these areas, like race, gender, education and I didn't analyze offenders' data lack of info about which whould lead to errors in the results. 
+
+## Conclusion
+The most significant outcome of the analysis is the fact that something had happened in between 2019 and 2020 which lead to blow up the shootings in NY. The only one thing pops up is COVID19. But I cannot figure out how it would impact the crime rate. And the lack of data in the existing data set doesn't allow to make any other assumption.
+Another is the model of dependency between shootings and murders. The linear regression perfectly models it. Adjusted R-squared:  0.9977 means that >99% is described with the model.
+
+## Session Info
+```{r session}
+sessionInfo()
+```
+
